@@ -8,7 +8,7 @@ terraform {
   }
   cloud {
     hostname     = "app.terraform.io"
-    organization = "demo-tfe"
+    organization = "kushal199"
 
     workspaces {
       name = "manage-tfe"
