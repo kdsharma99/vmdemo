@@ -1,41 +1,69 @@
 terraform {
-  required_version = ">= 1.1.0"
   required_providers {
-    tfe = {
-      source  = "hashicorp/tfe"
-      version = "0.45.0"
+    tls = {
+      source  = "hashicorp/tls"
+      version = "4.0.4"
+    }
+    pkcs12 = {
+      source  = "chilicat/pkcs12"
+      version = "0.0.7"
+    }
+    random = {
+      source  = "hashicorp/random"
+      version = "3.5.1"
     }
   }
-  cloud {
-    hostname     = "app.terraform.io"
-    organization = "kushal199"
+}
 
-    workspaces {
-      name = "manage-tfe"
-    }
+# Create a private key in PEM format
+resource "tls_private_key" "private_key" {
+  algorithm = "RSA"
+}
+
+# Generates a TLS self-signed certificate using the private key
+resource "tls_self_signed_cert" "self_signed_cert" {
+  private_key_pem = tls_private_key.private_key.private_key_pem
+
+  validity_period_hours = 120
+
+  subject {
+    # The subject CN field here contains the hostname to secure
+    common_name = "test.com"
   }
+
+  allowed_uses = [
+    "digital_signature",
+    "cert_signing",
+    "crl_signing",
+  ]
+
 }
 
-provider "tfe" {
+resource "local_file" "ca_key" {
+  content  = tls_private_key.private_key.private_key_pem
+  filename = "${path.module}/ca.key"
 }
 
-resource "tfe_organization" "test-organization" {
-  name  = "demo-tfe-book"
-  email = "admin@company.com"
+resource "local_file" "ca_cert" {
+  content  = tls_self_signed_cert.self_signed_cert.cert_pem
+  filename = "${path.module}/ca.pem"
 }
 
-resource "tfe_project" "project" {
-  organization = tfe_organization.test-organization.name
-  name         = "appproject"
+
+# To convert the PEM certificate in PFX we need a password
+resource "random_password" "self_signed_cert" {
+  length  = 24
+  special = true
 }
 
-resource "tfe_workspace" "wsnetwork" {
-  name         = "network"
-  organization = tfe_organization.test-organization.name
+# This resource converts the PEM certicate in PFX
+resource "pkcs12_from_pem" "self_signed_cert_pkcs12" {
+  cert_pem        = tls_self_signed_cert.self_signed_cert.cert_pem
+  private_key_pem = tls_private_key.private_key.private_key_pem
+  password        = random_password.self_signed_cert.result
 }
 
-resource "tfe_workspace" "wsvm" {
-  name         = "vm"
-  organization = tfe_organization.test-organization.name
+resource "local_file" "result" {
+  filename       = "${path.module}/ca.pxf"
+  content_base64 = pkcs12_from_pem.self_signed_cert_pkcs12.result
 }
-
